@@ -39,7 +39,7 @@ jobs:
         uses: pablomarelli/homelab-workflows/.github/actions/bump-version/LANGUAGE@main
         with:
           bump-type: ${{ inputs.bump-type || 'patch' }}
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.REPOS_TOKEN }}
 
   build:
     runs-on: ubuntu-latest
