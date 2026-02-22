@@ -1,0 +1,78 @@
+name: Workflow Deployment
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - workflows/*
+      - .github/workflows/deploy-workflows.yml
+
+jobs:
+  insert-workflows:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project:
+          - dev-porfolio
+          # - finance
+          # - home-assistant
+
+    steps:
+      - name: Checkout Self
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          path: main
+
+      - name: Checkout Project ${{ matrix.project }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          repository: "pablomarelli/${{ matrix.project }}"
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: project
+
+      - name: Insert Workflows
+        run: |
+          # NOTE: Determine project language to use for workflows
+          cd project
+          lang=""
+          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
+            lang="python"
+          elif [ -f "package.json" ]; then
+            lang="javascript"
+          else
+            exit 1
+          fi
+          cd ..
+
+          # Not needed until full swap
+          # if [[ -d project/.github/workflows ]]; then
+          #   rm -r project/.github/workflows
+          # fi
+          
+          # NOTE: Create .github/workflows is it doesn't exist
+          mkdir -p project/.github/workflows
+
+          # NOTE: Iterate over all workflows do replacements
+          for workflow in $(find main/workflows -type f -name *.yml); do
+            workflow_name=$(basename $workflow)
+            sed "s/LANGUAGE/$lang/g" "$workflow" > project/.github/workflows/"$workflow_name"
+          done
+
+      - name: Commit Workflows
+        continue-on-error: true
+        run: |
+
+          cd project
+
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
+
+          git add .github/workflows/*
+
+          if [[ `git status --porcelain` ]]; then
+            git commit -a -m "Update Github Workflows https://github.com/whatifmediagroup/vle-workflows/actions/runs/${{ github.run_id }}"
+
+            git pull --rebase
+            git push
+          fi
