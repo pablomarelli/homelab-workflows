@@ -3,6 +3,9 @@ name: Prod Deploy (ArgoCD)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'package.json'
+      - 'package-lock.json'
   workflow_dispatch:
     inputs:
       bump-type:
@@ -11,8 +14,8 @@ on:
         type: choice
         options:
           - "patch"
-          # - "minor"
-          # - "major"
+          - "minor"
+          - "major"
 
 jobs:
   # lint:
