@@ -1,0 +1,51 @@
+name: 'Bump Version'
+description: 'Bumps the version of the project using bumpversion'
+
+inputs:
+  bump-type:
+    description: 'Type of version bump (patch, minor, major)'
+    required: true
+  token:
+    description: 'Github Access Token to make changes to repo'
+    required: true
+
+outputs:
+  version:
+    description: 'The new version number'
+    value: ${{ steps.bump.outputs.VERSION }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        token: ${{ inputs.token }}
+
+    - name: Install bumpversion
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install bumpversion
+
+    - name: Configure Git
+      shell: bash
+      run: |
+        git config --global user.email "github-actions@github.com"
+        git config --global user.name "GitHub Actions"
+
+    - name: Bump version
+      id: bump
+      shell: bash
+      run: |
+        # Get versions and set output
+        NEW_VERSION=$(bumpversion --dry-run --list ${{ inputs.bump-type }} | grep new_version= | sed 's/new_version=//')
+        echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+        bumpversion ${{ inputs.bump-type }} --commit
+
+    - name: Push changes
+      shell: bash
+      run: |
+        git pull --rebase
+        git push

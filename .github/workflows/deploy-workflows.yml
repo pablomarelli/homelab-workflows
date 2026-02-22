@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         project:
-          - dev-porfolio
+          - dev-portfolio
           # - finance
           # - home-assistant
 
@@ -71,7 +71,7 @@ jobs:
           git add .github/workflows/*
 
           if [[ `git status --porcelain` ]]; then
-            git commit -a -m "Update Github Workflows https://github.com/whatifmediagroup/vle-workflows/actions/runs/${{ github.run_id }}"
+            git commit -a -m "Update Github Workflows https://github.com/pablomarelli/homelab-workflows/actions/runs/${{ github.run_id }}"
 
             git pull --rebase
             git push

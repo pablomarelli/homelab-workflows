@@ -1,0 +1,57 @@
+name: 'Deploy to Kubernetes'
+description: 'Updates Kubernetes deployments via ArgoCD Helm charts'
+
+inputs:
+  app-namespace:
+    description: 'Kubernetes namespace'
+    required: true
+  app-name:
+    description: 'Kubernetes deployment name'
+    required: true
+  # environment:
+  #   description: 'Target environment (e.g., sqa, dev, prod)'
+  #   required: true
+  version:
+    description: 'Image tag/version to deploy'
+    required: true
+  token:
+    description: 'GitHub PAT with repository access to infra'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout infra repo
+      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        repository: "pablomarelli/homelab-infra"
+        ref: main
+        token: ${{ inputs.token }}
+        fetch-depth: 0
+
+    - name: Debug version
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        echo "Current version $VERSION"
+
+    - name: Update image tag
+      shell: bash
+      run: |
+        cd infra
+        IMAGE="ghcr.io/pablomarelli/${{ inputs.app-name }}"
+        sed -i "s|image: ${IMAGE}:.*|image: ${IMAGE}:${{ inputs.version }}|" manifests/${{ inputs.app-name }}/deployment.yaml
+        
+    - name: Commit and push
+      shell: bash
+      run: |
+        cd infra
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        if [[ -n $(git status --porcelain) ]]; then
+          git add .
+          git commit -m "chore(${{ inputs.app-name }}): update image to ${{ inputs.version }}"
+          git pull --rebase
+          git push
+        fi

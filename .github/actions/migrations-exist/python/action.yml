@@ -1,0 +1,29 @@
+name: 'Migration Check'
+description: 'Check to see if migrations exist, error if true'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@0c366fd6a839edf440554fa01a7085ccba70ac98 #v6
+
+    - name: Get changed files
+      id: changed-files
+      uses: tj-actions/changed-files@24d32ffd492484c1d75e0c0b894501ddb9d30d62 # v47
+      with:
+        files: |
+          **/migrations/**.py
+
+    - name: Fail if migrations exist
+      if: steps.changed-markdown-files.outputs.any_changed == 'true'
+      env:
+        ALL_CHANGED_FILES: ${{ steps.changed-markdown-files.outputs.all_changed_files }}
+      shell: bash
+      run: |
+        for file in ${ALL_CHANGED_FILES}; do
+          echo "$file was changed"
+        done
+
+        exit 1
+
+
