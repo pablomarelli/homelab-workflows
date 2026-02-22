@@ -47,6 +47,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: bump-version
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Build and Push Docker image
         uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
