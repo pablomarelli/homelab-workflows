@@ -55,7 +55,7 @@ runs:
       shell: bash
       run: |
         IMAGE_NAME="${{ inputs.docker-image }}"
-        IMAGE_NAME=$(basename "$IMAGE_NAME")
+        # Keep the full path for ghcr.io (owner/repo format required)
         echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
 
     - name: Docker meta
