@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Checkout infra repo
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      uses: actions/checkout@v4
       with:
         repository: "pablomarelli/homelab-infra"
         ref: main
@@ -38,14 +38,12 @@ runs:
     - name: Update image tag
       shell: bash
       run: |
-        cd infra
         IMAGE="ghcr.io/pablomarelli/${{ inputs.app-name }}"
         sed -i "s|image: ${IMAGE}:.*|image: ${IMAGE}:${{ inputs.version }}|" manifests/${{ inputs.app-name }}/deployment.yaml
         
     - name: Commit and push
       shell: bash
       run: |
-        cd infra
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
 

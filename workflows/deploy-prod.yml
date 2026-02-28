@@ -69,6 +69,6 @@ jobs:
         uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
         with:
           app-name: ${{ github.event.repository.name }}
-          environment: prod
+          app-namespace: ${{ vars.APP_NAMESPACE }}
           version: ${{ needs.bump-version.outputs.version }}
           token: ${{ secrets.INFRA_REPO_TOKEN }}
