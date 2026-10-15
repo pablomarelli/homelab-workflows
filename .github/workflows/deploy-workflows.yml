@@ -16,6 +16,7 @@ jobs:
       matrix:
         project:
           - dev-portfolio
+          - easy-media-share
           # - finance
           # - home-assistant
 
