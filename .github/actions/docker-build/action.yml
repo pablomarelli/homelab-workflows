@@ -2,6 +2,9 @@ name: 'Docker Build and Push'
 description: 'Builds and pushes a Docker image to a registry'
 
 inputs:
+  ref:
+    description: 'Exact source revision to build (defaults to the triggering commit)'
+    default: ${{ github.sha }}
   docker-registry:
     description: 'Docker registry URL'
     required: true
@@ -36,6 +39,8 @@ runs:
   steps:
     - name: Checkout code
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        ref: ${{ inputs.ref }}
 
     - name: Log in to Docker Registry
       uses: docker/login-action@v2
@@ -80,6 +85,7 @@ runs:
     - name: Build and push
       uses: docker/build-push-action@v6
       with:
+        context: .
         platforms: linux/amd64
         push: ${{ inputs.docker-push }}
         tags: ${{ steps.meta.outputs.tags }}
