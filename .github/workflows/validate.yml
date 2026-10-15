@@ -1,0 +1,32 @@
+name: Validate workflows
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Test injection, version validation, and CI gating
+        run: node --test tests/*.test.cjs
+      - name: Lint workflows and the rendered JavaScript template
+        run: |
+          mkdir -p /tmp/javascript-project
+          echo '{}' > /tmp/javascript-project/package.json
+          bash scripts/inject-workflows.sh . /tmp/javascript-project javascript
+          docker run --rm -v "$PWD:/repo:ro" -v /tmp/javascript-project:/project:ro -w /repo rhysd/actionlint:1.7.12 -color .github/workflows/*.yml workflows/go-frontend-calver/*.yml /project/.github/workflows/deploy-prod.yml
+      - name: Lint shell scripts
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo koalaman/shellcheck:v0.11.0 scripts/*.sh .github/actions/read-version/*.sh

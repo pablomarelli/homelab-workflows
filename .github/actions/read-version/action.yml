@@ -1,0 +1,15 @@
+name: Read calendar version
+description: Validate the root VERSION file without changing the source revision
+outputs:
+  version:
+    description: Validated YYYY.MM.DD or YYYY.MM.DD.N version
+    value: ${{ steps.version.outputs.version }}
+runs:
+  using: composite
+  steps:
+    - name: Read VERSION
+      id: version
+      shell: bash
+      run: |
+        version=$(bash "$GITHUB_ACTION_PATH/read-version.sh" VERSION)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
