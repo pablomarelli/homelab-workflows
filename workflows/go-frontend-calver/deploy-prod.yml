@@ -5,76 +5,54 @@ on:
     workflows: [CI]
     types: [completed]
     branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-  actions: read
 
 concurrency:
   group: production-release
   cancel-in-progress: false
 
 jobs:
-  prepare:
+  release:
     if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_repository.full_name == github.repository))
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-      revision: ${{ steps.revision.outputs.revision }}
-      image-tag: ${{ steps.version.outputs.version }}-${{ steps.revision.outputs.revision }}
-    steps:
-      - name: Select the tested source revision
-        id: revision
-        env:
-          REVISION: ${{ github.event.workflow_run.head_sha || github.sha }}
-        run: echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
-      - name: Verify CI and main revision
-        uses: pablomarelli/homelab-workflows/.github/actions/verify-release@main
-        with:
-          revision: ${{ steps.revision.outputs.revision }}
-      - name: Check out tested source
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
-        with:
-          ref: ${{ steps.revision.outputs.revision }}
-          persist-credentials: false
-      - name: Read calendar version
-        id: version
-        uses: pablomarelli/homelab-workflows/.github/actions/read-version@main
-
-  build:
-    needs: prepare
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Build and push the tested revision
+      - name: Check out the revision that passed CI
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Require current main before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SOURCE_SHA"
+      - name: Read the application's calendar version
+        id: version
+        run: |
+          version=$(sh scripts/check-version.sh VERSION)
+          echo "tag=$version-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+      - name: Build and push
         uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
         with:
-          ref: ${{ needs.prepare.outputs.revision }}
+          ref: ${{ env.SOURCE_SHA }}
           docker-image: ${{ github.repository }}
           docker-password: ${{ secrets.GITHUB_TOKEN }}
           docker-push: true
-          version: ${{ needs.prepare.outputs.image-tag }}
-
-  deploy:
-    needs: [prepare, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Reject superseded releases
-        uses: pablomarelli/homelab-workflows/.github/actions/verify-release@main
-        with:
-          revision: ${{ needs.prepare.outputs.revision }}
+          version: ${{ steps.version.outputs.tag }}
+      - name: Reject a release superseded during the build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SOURCE_SHA"
       - name: Update the infrastructure image tag
         uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
         with:
           app-name: ${{ github.event.repository.name }}
           app-namespace: ${{ vars.APP_NAMESPACE }}
-          version: ${{ needs.prepare.outputs.image-tag }}
+          version: ${{ steps.version.outputs.tag }}
           token: ${{ secrets.INFRA_REPO_TOKEN }}

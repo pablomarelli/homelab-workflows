@@ -6,24 +6,19 @@ on:
       - main
     paths:
       - workflows/**
-      - scripts/inject-workflows.sh
       - .github/workflows/deploy-workflows.yml
   workflow_dispatch:
-
-permissions:
-  contents: read
 
 jobs:
   insert-workflows:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false
       matrix:
-        include:
-          - project: dev-portfolio
-            profile: javascript
-          - project: easy-media-share
-            profile: go-frontend-calver
+        project:
+          - dev-portfolio
+          - easy-media-share
+          # - finance
+          # - home-assistant
 
     steps:
       - name: Checkout Self
@@ -39,22 +34,45 @@ jobs:
           path: project
 
       - name: Insert Workflows
-        env:
-          PROFILE: ${{ matrix.profile }}
-        run: bash main/scripts/inject-workflows.sh main project "$PROFILE"
+        run: |
+          # NOTE: Determine project language to use for workflows
+          cd project
+          lang=""
+          if [ -f "backend/go.mod" ] && [ -f "frontend/package.json" ] && [ -f "VERSION" ]; then
+            lang="go-frontend-calver"
+          elif [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
+            lang="python"
+          elif [ -f "package.json" ]; then
+            lang="javascript"
+          else
+            exit 1
+          fi
+          cd ..
+
+          # Keep existing application CI; only inject deployment templates.
+          mkdir -p project/.github/workflows
+          workflow_dir=main/workflows
+          if [ "$lang" = "go-frontend-calver" ]; then
+            workflow_dir="$workflow_dir/go-frontend-calver"
+          fi
+          for workflow in "$workflow_dir"/*.yml; do
+            workflow_name=$(basename "$workflow")
+            sed "s/LANGUAGE/$lang/g" "$workflow" > "project/.github/workflows/$workflow_name"
+          done
 
       - name: Commit Workflows
+        continue-on-error: true
         run: |
 
           cd project
 
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions"
 
-          git add .github/workflows/deploy-prod.yml
+          git add .github/workflows/*
 
-          if ! git diff --cached --quiet; then
-            git commit -m "Update Github Workflows https://github.com/pablomarelli/homelab-workflows/actions/runs/${{ github.run_id }}"
+          if [[ $(git status --porcelain) ]]; then
+            git commit -a -m "Update Github Workflows https://github.com/pablomarelli/homelab-workflows/actions/runs/${{ github.run_id }}"
 
             git pull --rebase
             git push
