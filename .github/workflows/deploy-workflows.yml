@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - workflows/*
+      - workflows/**
       - .github/workflows/deploy-workflows.yml
   workflow_dispatch:
 
@@ -38,7 +38,9 @@ jobs:
           # NOTE: Determine project language to use for workflows
           cd project
           lang=""
-          if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
+          if [ -f "backend/go.mod" ] && [ -f "frontend/package.json" ] && [ -f "VERSION" ]; then
+            lang="go-frontend-calver"
+          elif [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
             lang="python"
           elif [ -f "package.json" ]; then
             lang="javascript"
@@ -47,18 +49,15 @@ jobs:
           fi
           cd ..
 
-          # Not needed until full swap
-          # if [[ -d project/.github/workflows ]]; then
-          #   rm -r project/.github/workflows
-          # fi
-          
-          # NOTE: Create .github/workflows is it doesn't exist
+          # Keep existing application CI; only inject deployment templates.
           mkdir -p project/.github/workflows
-
-          # NOTE: Iterate over all workflows do replacements
-          for workflow in $(find main/workflows -type f -name *.yml); do
-            workflow_name=$(basename $workflow)
-            sed "s/LANGUAGE/$lang/g" "$workflow" > project/.github/workflows/"$workflow_name"
+          workflow_dir=main/workflows
+          if [ "$lang" = "go-frontend-calver" ]; then
+            workflow_dir="$workflow_dir/go-frontend-calver"
+          fi
+          for workflow in "$workflow_dir"/*.yml; do
+            workflow_name=$(basename "$workflow")
+            sed "s/LANGUAGE/$lang/g" "$workflow" > "project/.github/workflows/$workflow_name"
           done
 
       - name: Commit Workflows
@@ -72,7 +71,7 @@ jobs:
 
           git add .github/workflows/*
 
-          if [[ `git status --porcelain` ]]; then
+          if [[ $(git status --porcelain) ]]; then
             git commit -a -m "Update Github Workflows https://github.com/pablomarelli/homelab-workflows/actions/runs/${{ github.run_id }}"
 
             git pull --rebase
