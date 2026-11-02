@@ -10,6 +10,9 @@ inputs:
     required: true
 
 outputs:
+  revision:
+    description: Release commit
+    value: ${{ steps.release.outputs.revision }}
   version:
     description: 'The new version number'
     value: ${{ steps.bump.outputs.VERSION }}
@@ -21,6 +24,8 @@ runs:
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
       with:
         token: ${{ inputs.token }}
+        ref: ${{ github.ref_name }}
+        fetch-depth: 0
 
     - name: Install bumpversion
       shell: bash
@@ -37,15 +42,17 @@ runs:
     - name: Bump version
       id: bump
       shell: bash
+      env:
+        BUMP_TYPE: ${{ inputs.bump-type }}
       run: |
+        case "$BUMP_TYPE" in patch|minor|major) ;; *) exit 1 ;; esac
         # Get versions and set output
-        NEW_VERSION=$(bumpversion --dry-run --list ${{ inputs.bump-type }} | grep new_version= | sed 's/new_version=//')
+        NEW_VERSION=$(bumpversion --dry-run --list "$BUMP_TYPE" | grep new_version= | sed 's/new_version=//')
         echo "VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-        bumpversion ${{ inputs.bump-type }} --commit
+        bumpversion "$BUMP_TYPE" --no-commit --no-tag
 
-    - name: Push changes
-      shell: bash
-      run: |
-        git pull --rebase
-        git push
+    - id: release
+      uses: pablomarelli/homelab-workflows/.github/actions/commit-release@main
+      with:
+        version: ${{ steps.bump.outputs.VERSION }}

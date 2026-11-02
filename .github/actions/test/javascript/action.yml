@@ -1,0 +1,30 @@
+name: JavaScript tests
+description: Run unit tests, build, and declared Playwright suites
+inputs:
+  ref:
+    description: Checked source revision
+    default: ${{ github.sha }}
+  node-version:
+    description: Supported Node version
+    default: '24'
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref }}
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+    - shell: bash
+      env:
+        CI: 'true'
+      run: |
+        npm ci
+        npm test
+        npm run build
+        if node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
+          npx --no-install playwright install --with-deps chromium
+          npm run test:e2e
+        fi

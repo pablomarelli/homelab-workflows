@@ -7,15 +7,13 @@ const { test } = require("node:test");
 const { runInNewContext } = require("node:vm");
 
 const root = path.resolve(__dirname, "..");
-const injector = fs.readFileSync(path.join(root, ".github/workflows/deploy-workflows.yml"), "utf8")
-  .split("      - name: Insert Workflows\n        run: |\n")[1]
-  .split("      - name: Commit Workflows")[0]
-  .replace(/^          /gm, "");
+const injector = 'bash main/scripts/inject-workflows.sh main/workflows project';
 
 function fixture(t, files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "workflow-test-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   fs.cpSync(path.join(root, "workflows"), path.join(dir, "main/workflows"), { recursive: true });
+  fs.cpSync(path.join(root, "scripts"), path.join(dir, "main/scripts"), { recursive: true });
   for (const [name, contents] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, name)), { recursive: true });
     fs.writeFileSync(path.join(dir, name), contents);
@@ -25,7 +23,8 @@ function fixture(t, files) {
 
 for (const [language, files, expected] of [
   ["Go/frontend", { "backend/go.mod": "module app", "frontend/package.json": "{}", VERSION: "2026.08.26" }, "go-frontend-calver/deploy-prod.yml"],
-  ["JavaScript", { "package.json": "{}" }, "deploy-prod.yml"],
+  ["Go", { "go.mod": "module app", VERSION: "0.1.0" }, "deploy-prod.yml"],
+  ["JavaScript", { "package.json": JSON.stringify({ scripts: { lint: "lint", test: "test", build: "build" } }), "package-lock.json": "{}" }, "deploy-prod.yml"],
   ["Python", { "pyproject.toml": "" }, "deploy-prod.yml"],
 ]) {
   test(`injects only the ${language} template and preserves CI and VERSION`, (t) => {

@@ -1,0 +1,18 @@
+name: Commit release version
+description: Commit version changes and atomically publish the release commit and tag
+inputs:
+  version:
+    description: New semantic version
+    required: true
+outputs:
+  revision:
+    description: Exact release commit
+    value: ${{ steps.commit.outputs.revision }}
+runs:
+  using: composite
+  steps:
+    - id: commit
+      shell: bash
+      env:
+        VERSION: ${{ inputs.version }}
+      run: bash "${GITHUB_ACTION_PATH}/commit.sh"

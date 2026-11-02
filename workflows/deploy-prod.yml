@@ -1,41 +1,29 @@
 name: Prod Deploy (ArgoCD)
-
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'package.json'
-      - 'package-lock.json'
   workflow_dispatch:
     inputs:
       bump-type:
-        description: "Semver Bump Type"
+        description: Semver bump type
         required: true
         type: choice
-        options:
-          - "patch"
-          - "minor"
-          - "major"
-
+        options: [patch, minor, major]
+      publish-only:
+        description: Publish without updating infrastructure (initial onboarding)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: production-release
+  cancel-in-progress: false
 jobs:
-  # lint:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - name: Run linting
-  #       uses: pablomarelli/homelab-workflows/.github/actions/lint/LANGUAGE@main
-  #
-  # test:
-  #   runs-on: ubuntu-latest
-  #   needs: lint
-  #   steps:
-  #     - name: Run tests
-  #       uses: pablomarelli/homelab-workflows/.github/actions/test/LANGUAGE@main
-
   bump-version:
-    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
+      revision: ${{ steps.bump.outputs.revision }}
     steps:
       - name: Bump version
         id: bump
@@ -43,30 +31,42 @@ jobs:
         with:
           bump-type: ${{ inputs.bump-type || 'patch' }}
           token: ${{ secrets.REPOS_TOKEN }}
-
-  build:
-    runs-on: ubuntu-latest
+  lint:
     needs: bump-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pablomarelli/homelab-workflows/.github/actions/lint/LANGUAGE@main
+        with:
+          ref: ${{ needs.bump-version.outputs.revision }}
+  test:
+    needs: bump-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pablomarelli/homelab-workflows/.github/actions/test/LANGUAGE@main
+        with:
+          ref: ${{ needs.bump-version.outputs.revision }}
+  build:
+    needs: [bump-version, lint, test]
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
-      - name: Build and Push Docker image
-        uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
+      - uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
         with:
-          docker-registry: ghcr.io          
+          docker-registry: ghcr.io
           docker-image: ${{ github.repository }}
           docker-username: ${{ github.actor }}
           docker-password: ${{ secrets.GITHUB_TOKEN }}
           docker-push: true
           version: ${{ needs.bump-version.outputs.version }}
-
+          ref: ${{ needs.bump-version.outputs.revision }}
   deploy:
-    runs-on: ubuntu-latest
+    if: ${{ !inputs.publish-only && vars.DEPLOY_ENABLED != 'false' }}
     needs: [bump-version, build]
+    runs-on: ubuntu-latest
     steps:
-      - name: Deploy to ArgoCD
-        uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
+      - uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
         with:
           app-name: ${{ github.event.repository.name }}
           app-namespace: ${{ vars.APP_NAMESPACE }}
