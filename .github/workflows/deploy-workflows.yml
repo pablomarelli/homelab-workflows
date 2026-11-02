@@ -17,6 +17,8 @@ jobs:
         project:
           - dev-portfolio
           - easy-media-share
+          - family-manager-backend
+          - family-manager-frontend
           # - finance
           # - home-assistant
 
@@ -37,6 +39,18 @@ jobs:
         run: |
           # NOTE: Determine project language to use for workflows
           cd project
+          # Family Manager uses checked-revision releases without version commits.
+          # Keep its template separate from the existing semver pipeline.
+          case "${{ matrix.project }}" in
+            family-manager-backend) lang=go ;;
+            family-manager-frontend) lang=javascript ;;
+            *) lang="" ;;
+          esac
+          if [ -n "$lang" ]; then
+            mkdir -p .github/workflows
+            sed "s/LANGUAGE/$lang/g" ../main/workflows/family-manager.yml > .github/workflows/family-manager-release.yml
+            exit 0
+          fi
           lang=""
           if [ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "Pipfile" ]; then
             lang="python"
@@ -56,7 +70,7 @@ jobs:
           mkdir -p project/.github/workflows
 
           # NOTE: Iterate over all workflows do replacements
-          for workflow in $(find main/workflows -type f -name *.yml); do
+          for workflow in $(find main/workflows -type f -name '*.yml' ! -name family-manager.yml); do
             workflow_name=$(basename $workflow)
             sed "s/LANGUAGE/$lang/g" "$workflow" > project/.github/workflows/"$workflow_name"
           done
