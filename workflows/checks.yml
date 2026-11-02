@@ -1,0 +1,18 @@
+name: Application checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: application-checks-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pablomarelli/homelab-workflows/.github/actions/lint/LANGUAGE@main
+      - uses: pablomarelli/homelab-workflows/.github/actions/test/LANGUAGE@main
+      - name: Check Docker build
+        run: docker build -t application-check:test .

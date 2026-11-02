@@ -27,7 +27,7 @@ for (const [language, files, expected] of [
   ["JavaScript", { "package.json": JSON.stringify({ scripts: { lint: "lint", test: "test", build: "build" } }), "package-lock.json": "{}" }, "deploy-prod.yml"],
   ["Python", { "pyproject.toml": "" }, "deploy-prod.yml"],
 ]) {
-  test(`injects only the ${language} template and preserves CI and VERSION`, (t) => {
+  test(`injects the ${language} templates and preserves CI and VERSION`, (t) => {
     const dir = fixture(t, Object.fromEntries(Object.entries({ ...files, ".github/workflows/ci.yaml": "existing CI" })
       .map(([name, contents]) => [`project/${name}`, contents])));
     const result = spawnSync("bash", ["-e", "-c", injector], { cwd: dir, encoding: "utf8" });
@@ -35,15 +35,31 @@ for (const [language, files, expected] of [
     const rendered = fs.readFileSync(path.join(dir, "project/.github/workflows/deploy-prod.yml"), "utf8");
     const template = fs.readFileSync(path.join(root, "workflows", expected), "utf8");
     assert.equal(rendered, template.replaceAll("LANGUAGE", language.toLowerCase()));
+    const checksPath = path.join(dir, "project/.github/workflows/checks.yml");
+    if (language === "Go/frontend") {
+      assert.equal(fs.existsSync(checksPath), false);
+    } else {
+      const checks = fs.readFileSync(path.join(root, "workflows/checks.yml"), "utf8");
+      assert.equal(fs.readFileSync(checksPath, "utf8"), checks.replaceAll("LANGUAGE", language.toLowerCase()));
+      // Reinjection updates managed checks while retaining unrelated application CI.
+      fs.writeFileSync(checksPath, "old shared checks");
+      const reinjected = spawnSync("bash", ["-e", "-c", injector], { cwd: dir, encoding: "utf8" });
+      assert.equal(reinjected.status, 0, reinjected.stderr);
+      assert.equal(fs.readFileSync(checksPath, "utf8"), checks.replaceAll("LANGUAGE", language.toLowerCase()));
+    }
     assert.equal(fs.readFileSync(path.join(dir, "project/.github/workflows/ci.yaml"), "utf8"), "existing CI");
     if (files.VERSION) assert.equal(fs.readFileSync(path.join(dir, "project/VERSION"), "utf8"), files.VERSION);
   });
 }
 
-test("unsupported layouts fail without overwriting an existing deployment workflow", (t) => {
-  const dir = fixture(t, { "project/.github/workflows/deploy-prod.yml": "existing deployment" });
+test("unsupported layouts fail without overwriting existing shared workflows", (t) => {
+  const dir = fixture(t, {
+    "project/.github/workflows/deploy-prod.yml": "existing deployment",
+    "project/.github/workflows/checks.yml": "existing checks",
+  });
   assert.notEqual(spawnSync("bash", ["-e", "-c", injector], { cwd: dir }).status, 0);
   assert.equal(fs.readFileSync(path.join(dir, "project/.github/workflows/deploy-prod.yml"), "utf8"), "existing deployment");
+  assert.equal(fs.readFileSync(path.join(dir, "project/.github/workflows/checks.yml"), "utf8"), "existing checks");
 });
 
 test("both freshness checks fail closed for stale revisions or API failures", (t) => {
