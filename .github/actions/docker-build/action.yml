@@ -2,6 +2,10 @@ name: 'Docker Build and Push'
 description: 'Builds and pushes a Docker image to a registry'
 
 inputs:
+  ref:
+    description: Exact checked release commit to build
+    required: false
+    default: ${{ github.sha }}
   docker-registry:
     description: 'Docker registry URL'
     required: true
@@ -29,13 +33,15 @@ outputs:
     value: ${{ steps.meta.outputs.tags }}
   version:
     description: 'Version used for the image'
-    value: ${{ steps.version.outputs.version }}
+    value: ${{ inputs.version }}
 
 runs:
   using: "composite"
   steps:
     - name: Checkout code
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        ref: ${{ inputs.ref }}
 
     - name: Log in to Docker Registry
       uses: docker/login-action@v2
@@ -64,12 +70,12 @@ runs:
       with:
         images: ${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}
         tags: |
-          type=sha,prefix=
+          type=raw,value=sha-${{ inputs.ref }}
           type=ref,event=branch
           type=ref,event=tag
           type=ref,event=pr
           type=raw,value=latest
-          type=semver,pattern={{version}},value=${{ steps.version.outputs.version }},enable={{is_default_branch}}
+          type=semver,pattern={{version}},value=${{ inputs.version }},enable={{is_default_branch}}
           type=raw,value=${{ inputs.version }}
 
     - name: Show generated Docker tags
@@ -80,8 +86,9 @@ runs:
     - name: Build and push
       uses: docker/build-push-action@v6
       with:
+        context: .
         platforms: linux/amd64
         push: ${{ inputs.docker-push }}
         tags: ${{ steps.meta.outputs.tags }}
-        cache-from: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:latest
-        cache-to: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:latest,mode=max
+        cache-from: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:buildcache
+        cache-to: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:buildcache,mode=max

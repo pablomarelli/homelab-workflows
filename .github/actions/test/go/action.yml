@@ -1,0 +1,19 @@
+name: Go tests
+description: Run race-enabled Go tests and compile packages
+inputs:
+  ref:
+    description: Checked source revision
+    default: ${{ github.sha }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref }}
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - shell: bash
+      run: |
+        go test -race ./...
+        go build ./...

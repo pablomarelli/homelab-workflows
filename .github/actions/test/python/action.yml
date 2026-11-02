@@ -2,6 +2,9 @@ name: 'Python Test'
 description: 'Runs tests on Python code using pytest'
 
 inputs:
+  ref:
+    description: Checked source revision
+    default: ${{ github.sha }}
   python-version:
     description: 'Python version to use'
     required: false
@@ -12,9 +15,13 @@ runs:
   steps:
     - name: Checkout repository
       uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+      with:
+        ref: ${{ inputs.ref }}
 
     - name: Set up Python
       uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
 
     - name: Install dependencies
       shell: bash

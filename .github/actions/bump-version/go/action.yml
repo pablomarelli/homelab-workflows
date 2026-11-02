@@ -1,0 +1,33 @@
+name: Bump Go application version
+description: Bump a root VERSION file using semantic versioning
+inputs:
+  bump-type:
+    description: patch, minor, or major
+    default: patch
+  token:
+    description: Token with permission to push release commits and tags
+    required: true
+outputs:
+  version:
+    description: New semantic version
+    value: ${{ steps.bump.outputs.version }}
+  revision:
+    description: Release commit
+    value: ${{ steps.release.outputs.revision }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        token: ${{ inputs.token }}
+        ref: ${{ github.ref_name }}
+        fetch-depth: 0
+    - id: bump
+      shell: bash
+      env:
+        BUMP_TYPE: ${{ inputs.bump-type }}
+      run: bash "${GITHUB_ACTION_PATH}/bump.sh"
+    - id: release
+      uses: pablomarelli/homelab-workflows/.github/actions/commit-release@main
+      with:
+        version: ${{ steps.bump.outputs.version }}
