@@ -2,7 +2,10 @@
 set -euo pipefail
 templates=$(cd "$1" && pwd)
 cd "$2"
-if [[ -f go.mod ]]; then
+if [[ -f backend/go.mod && -f frontend/package.json && -f VERSION ]]; then
+  lang=go-frontend-calver
+  templates="$templates/go-frontend-calver"
+elif [[ -f go.mod ]]; then
   lang=go
   grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' VERSION || { echo 'Go projects require a root semantic VERSION file' >&2; exit 1; }
 elif [[ -f requirements.txt || -f pyproject.toml || -f Pipfile ]]; then

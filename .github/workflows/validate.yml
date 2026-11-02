@@ -13,5 +13,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
-      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -shellcheck= .github/workflows/*.yml workflows/*.yml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -shellcheck= .github/workflows/*.yml workflows/*.yml workflows/*/*.yml
       - run: bash tests/releases.sh
+      - run: node --test tests/injection.test.cjs

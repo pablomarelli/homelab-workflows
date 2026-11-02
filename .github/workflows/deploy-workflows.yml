@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - workflows/*
+      - workflows/**
       - scripts/inject-workflows.sh
       - .github/workflows/deploy-workflows.yml
   workflow_dispatch:
@@ -42,7 +42,6 @@ jobs:
 
       - name: Commit Workflows
         run: |
-
           cd project
 
           git config --global user.email "github-actions@github.com"
@@ -50,7 +49,7 @@ jobs:
 
           git add .github/workflows/*
 
-          if [[ `git status --porcelain` ]]; then
+          if [[ $(git status --porcelain) ]]; then
             git commit -m "Update Github Workflows https://github.com/pablomarelli/homelab-workflows/actions/runs/${{ github.run_id }}"
 
             git pull --rebase
