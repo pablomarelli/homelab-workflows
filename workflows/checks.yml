@@ -1,0 +1,27 @@
+name: Application checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: application-checks-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CI_E2E_SCRIPTS: ${{ vars.CI_E2E_SCRIPTS }}
+  CI_INTEGRATION_SCRIPTS: ${{ vars.CI_INTEGRATION_SCRIPTS }}
+  CI_PLAYWRIGHT_WORKERS: ${{ vars.CI_PLAYWRIGHT_WORKERS }}
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: pablomarelli/homelab-workflows/.github/actions/lint/LANGUAGE@main
+      - uses: pablomarelli/homelab-workflows/.github/actions/test/LANGUAGE@main
+      - name: Check Docker build
+        uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
+        with:
+          docker-image: ${{ github.repository }}
+          docker-password: ${{ secrets.GITHUB_TOKEN }}
+          docker-push: false
+          normalized-dependencies: ${{ vars.CI_NORMALIZED_DEPENDENCIES || 'false' }}

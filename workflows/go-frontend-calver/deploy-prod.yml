@@ -37,22 +37,47 @@ jobs:
         run: |
           version=$(sh scripts/check-version.sh VERSION)
           echo "tag=$version-$SOURCE_SHA" >> "$GITHUB_OUTPUT"
-      - name: Build and push
+      - name: Build and push candidate
+        id: build
         uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
         with:
           ref: ${{ env.SOURCE_SHA }}
           docker-image: ${{ github.repository }}
           docker-password: ${{ secrets.GITHUB_TOKEN }}
           docker-push: true
-          version: ${{ steps.version.outputs.tag }}
       - name: Reject a release superseded during the build
         env:
           GH_TOKEN: ${{ github.token }}
         run: test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SOURCE_SHA"
+      - name: Promote checked candidate
+        id: promote
+        uses: pablomarelli/homelab-workflows/.github/actions/docker-promote@main
+        with:
+          image: ${{ steps.build.outputs.image }}
+          digest: ${{ steps.build.outputs.digest }}
+          version: ${{ steps.version.outputs.tag }}
+          ref: ${{ env.SOURCE_SHA }}
+          docker-password: ${{ secrets.GITHUB_TOKEN }}
       - name: Update the infrastructure image tag
+        id: deploy
+        if: vars.DEPLOY_ENABLED != 'false'
         uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
         with:
           app-name: ${{ github.event.repository.name }}
           app-namespace: ${{ vars.APP_NAMESPACE }}
           version: ${{ steps.version.outputs.tag }}
           token: ${{ secrets.INFRA_REPO_TOKEN }}
+      - name: Report release outcome
+        if: always()
+        env:
+          PUBLISHED: ${{ steps.promote.outputs.published || 'false' }}
+          DEPLOY: ${{ steps.deploy.outcome }}
+          INFRA_UPDATED: ${{ steps.deploy.outputs.infra-updated || 'false' }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        run: |
+          {
+            echo "Published: $PUBLISHED"
+            echo "Infrastructure update: $DEPLOY; infra-updated: $INFRA_UPDATED"
+            echo "Deploy policy: DEPLOY_ENABLED=$DEPLOY_ENABLED"
+            echo "Healthy: unknown (cluster health is not checked by this workflow)"
+          } >> "$GITHUB_STEP_SUMMARY"

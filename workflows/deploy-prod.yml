@@ -18,8 +18,14 @@ permissions:
 concurrency:
   group: production-release
   cancel-in-progress: false
+env:
+  CI_E2E_SCRIPTS: ${{ vars.CI_E2E_SCRIPTS }}
+  CI_INTEGRATION_SCRIPTS: ${{ vars.CI_INTEGRATION_SCRIPTS }}
+  CI_PLAYWRIGHT_WORKERS: ${{ vars.CI_PLAYWRIGHT_WORKERS }}
+  CI_BUILD_ARTIFACT_PATH: ${{ vars.CI_BUILD_ARTIFACT_PATH }}
 jobs:
   bump-version:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
@@ -46,29 +52,109 @@ jobs:
         with:
           ref: ${{ needs.bump-version.outputs.revision }}
   build:
-    needs: [bump-version, lint, test]
+    if: vars.CI_BUILD_ARTIFACT_PATH == ''
+    needs: bump-version
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.build.outputs.image }}
     steps:
-      - uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
+      - id: build
+        uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
         with:
-          docker-registry: ghcr.io
           docker-image: ${{ github.repository }}
-          docker-username: ${{ github.actor }}
           docker-password: ${{ secrets.GITHUB_TOKEN }}
           docker-push: true
+          ref: ${{ needs.bump-version.outputs.revision }}
+          normalized-dependencies: ${{ vars.CI_NORMALIZED_DEPENDENCIES || 'false' }}
+  build-from-artifact:
+    if: vars.CI_BUILD_ARTIFACT_PATH != ''
+    needs: [bump-version, test]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ steps.build.outputs.image }}
+    steps:
+      - id: build
+        uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
+        with:
+          docker-image: ${{ github.repository }}
+          docker-password: ${{ secrets.GITHUB_TOKEN }}
+          docker-push: true
+          ref: ${{ needs.bump-version.outputs.revision }}
+          artifact-name: app-build-${{ github.run_id }}-${{ github.run_attempt }}
+          artifact-path: ${{ vars.CI_BUILD_ARTIFACT_PATH }}
+          dockerfile: ${{ vars.CI_RUNTIME_DOCKERFILE || 'Dockerfile.runtime' }}
+  promote:
+    needs: [bump-version, lint, test, build, build-from-artifact]
+    if: >-
+      always() && !cancelled() &&
+      needs.bump-version.result == 'success' &&
+      needs.lint.result == 'success' && needs.test.result == 'success' &&
+      ((needs.build.result == 'success' && needs.build-from-artifact.result == 'skipped') ||
+       (needs.build.result == 'skipped' && needs.build-from-artifact.result == 'success'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      published: ${{ steps.promote.outputs.published }}
+    steps:
+      - id: promote
+        uses: pablomarelli/homelab-workflows/.github/actions/docker-promote@main
+        with:
+          image: ${{ needs.build.outputs.image || needs.build-from-artifact.outputs.image }}
+          digest: ${{ needs.build.outputs.digest || needs.build-from-artifact.outputs.digest }}
           version: ${{ needs.bump-version.outputs.version }}
           ref: ${{ needs.bump-version.outputs.revision }}
+          docker-password: ${{ secrets.GITHUB_TOKEN }}
   deploy:
     if: ${{ !inputs.publish-only && vars.DEPLOY_ENABLED != 'false' }}
-    needs: [bump-version, build]
+    needs: [bump-version, promote]
     runs-on: ubuntu-latest
+    outputs:
+      infra-updated: ${{ steps.deploy.outputs.infra-updated }}
+      healthy: ${{ steps.deploy.outputs.healthy }}
     steps:
-      - uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
+      - name: Reject superseded release before infrastructure update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REVISION: ${{ needs.bump-version.outputs.revision }}
+        run: |
+          current=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          test "$current" = "$REVISION"
+      - id: deploy
+        uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
         with:
           app-name: ${{ github.event.repository.name }}
           app-namespace: ${{ vars.APP_NAMESPACE }}
           version: ${{ needs.bump-version.outputs.version }}
           token: ${{ secrets.INFRA_REPO_TOKEN }}
+  outcome:
+    if: always()
+    needs: [bump-version, lint, test, build, build-from-artifact, promote, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report release and infrastructure outcomes
+        env:
+          PUBLISHED: ${{ needs.promote.outputs.published || 'false' }}
+          PROMOTION: ${{ needs.promote.result }}
+          DEPLOY: ${{ needs.deploy.result }}
+          INFRA_UPDATED: ${{ needs.deploy.outputs.infra-updated || 'false' }}
+          HEALTHY: ${{ needs.deploy.outputs.healthy || 'unknown' }}
+          PUBLISH_ONLY: ${{ inputs.publish-only || false }}
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        run: |
+          {
+            echo "Published: $PUBLISHED (promotion: $PROMOTION)"
+            echo "Infrastructure update: $DEPLOY; infra-updated: $INFRA_UPDATED"
+            echo "Healthy: $HEALTHY (cluster health is not checked by this workflow)"
+            echo "Deploy policy: publish-only=$PUBLISH_ONLY; DEPLOY_ENABLED=$DEPLOY_ENABLED"
+            echo "A skipped infrastructure update is not a deployment. See prerequisite jobs for failures."
+          } >> "$GITHUB_STEP_SUMMARY"

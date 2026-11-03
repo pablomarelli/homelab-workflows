@@ -1,0 +1,18 @@
+name: JavaScript dependencies
+description: Cache npm downloads using manifests without root release version metadata
+inputs:
+  node-version:
+    description: Node version
+    default: '24'
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: node "$GITHUB_ACTION_PATH/normalize.cjs" .ci-dependencies
+    - uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+        cache: npm
+        cache-dependency-path: .ci-dependencies/package-lock.json
+    - shell: bash
+      run: npm ci

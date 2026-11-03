@@ -1,55 +1,37 @@
-name: 'Deploy to Kubernetes'
-description: 'Updates Kubernetes deployments via ArgoCD Helm charts'
-
+name: Update infrastructure image
+description: Commit an image tag to infrastructure; does not verify ArgoCD or cluster health
 inputs:
   app-namespace:
-    description: 'Kubernetes namespace'
+    description: Kubernetes namespace (informational; manifest path is selected by app-name)
     required: true
   app-name:
-    description: 'Kubernetes deployment name'
+    description: Application directory in infrastructure
     required: true
-  # environment:
-  #   description: 'Target environment (e.g., sqa, dev, prod)'
-  #   required: true
   version:
-    description: 'Image tag/version to deploy'
+    description: Published image tag to request
     required: true
   token:
-    description: 'GitHub PAT with repository access to infra'
+    description: Token with infrastructure repository access
     required: true
-
+outputs:
+  infra-updated:
+    description: True only when a changed infrastructure commit was pushed
+    value: ${{ steps.update.outputs.infra-updated }}
+  healthy:
+    description: Always unknown; GitOps reconciliation is not observed
+    value: unknown
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Checkout infra repo
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
-        repository: "pablomarelli/homelab-infra"
+        repository: pablomarelli/homelab-infra
         ref: main
         token: ${{ inputs.token }}
         fetch-depth: 0
-
-    - name: Debug version
+    - id: update
       shell: bash
-      run: |
-        VERSION="${{ inputs.version }}"
-        echo "Current version $VERSION"
-
-    - name: Update image tag
-      shell: bash
-      run: |
-        IMAGE="ghcr.io/pablomarelli/${{ inputs.app-name }}"
-        sed -i "s|image: ${IMAGE}:.*|image: ${IMAGE}:${{ inputs.version }}|" manifests/${{ inputs.app-name }}/deployment.yaml
-        
-    - name: Commit and push
-      shell: bash
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-
-        if [[ -n $(git status --porcelain) ]]; then
-          git add .
-          git commit -m "chore(${{ inputs.app-name }}): update image to ${{ inputs.version }}"
-          git pull --rebase
-          git push
-        fi
+      env:
+        APP_NAME: ${{ inputs.app-name }}
+        VERSION: ${{ inputs.version }}
+      run: bash "$GITHUB_ACTION_PATH/update.sh"
