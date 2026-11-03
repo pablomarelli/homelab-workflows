@@ -13,11 +13,9 @@ runs:
     - uses: actions/checkout@v4
       with:
         ref: ${{ inputs.ref }}
-    - uses: actions/setup-node@v4
+    - uses: pablomarelli/homelab-workflows/.github/actions/javascript-dependencies@main
       with:
         node-version: ${{ inputs.node-version }}
-        cache: npm
     - shell: bash
       run: |
-        npm ci
         npm run lint

@@ -1,94 +1,112 @@
-name: 'Docker Build and Push'
-description: 'Builds and pushes a Docker image to a registry'
-
+name: Docker candidate build
+description: Build an exact revision and publish only a unique SHA candidate tag
 inputs:
   ref:
     description: Exact checked release commit to build
-    required: false
     default: ${{ github.sha }}
   docker-registry:
-    description: 'Docker registry URL'
-    required: true
-    default: 'ghcr.io'
+    description: Registry
+    default: ghcr.io
   docker-image:
-    description: 'Name of the image (defaults to repo name)'
+    description: Image name including owner
     required: true
   docker-username:
-    description: 'Docker username'
-    required: true
+    description: Registry username
     default: ${{ github.actor }}
   docker-password:
-    description: 'Docker password (GITHUB_TOKEN for ghcr.io)'
+    description: Registry password
     required: true
   docker-push:
-    description: 'Do we push the docker image'
-    default: false
+    description: Publish the candidate
+    default: 'false'
   version:
-    description: 'Version tag for the image'
-    required: false
-
+    description: Legacy checked-build release tag; new workflows use docker-promote after checks
+    default: ''
+  platforms:
+    description: Target platforms
+    default: linux/amd64
+  qemu:
+    description: Explicitly enable emulation for non-native targets
+    default: 'false'
+  artifact-name:
+    description: Optional artifact from this run (requires compatible Dockerfile)
+    default: ''
+  artifact-path:
+    description: Destination in the build context
+    default: dist
+  dockerfile:
+    description: Dockerfile path
+    default: Dockerfile
+  normalized-dependencies:
+    description: Supply a dependencies named context for opted-in JavaScript Dockerfiles
+    default: 'false'
 outputs:
-  image:
-    description: 'Full image name with registry and tag'
-    value: ${{ steps.meta.outputs.tags }}
   version:
-    description: 'Version used for the image'
+    description: Legacy version input (empty for candidate-only builds)
     value: ${{ inputs.version }}
-
+  digest:
+    description: Candidate digest; promotion uses this rather than resolving a tag
+    value: ${{ steps.build.outputs.digest }}
+  image:
+    description: Image repository
+    value: ${{ steps.image.outputs.name }}
+  candidate:
+    description: Unique candidate tag (no release aliases)
+    value: ${{ steps.image.outputs.candidate }}
 runs:
-  using: "composite"
+  using: composite
   steps:
-    - name: Checkout code
-      uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+    - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
       with:
         ref: ${{ inputs.ref }}
-
-    - name: Log in to Docker Registry
-      uses: docker/login-action@v2
+    - id: image
+      shell: bash
+      env:
+        IMAGE: ${{ inputs.docker-registry }}/${{ inputs.docker-image }}
+        REVISION: ${{ inputs.ref }}
+      run: |
+        test "$(git rev-parse HEAD)" = "$REVISION"
+        [[ "$REVISION" =~ ^[0-9a-f]{40}$ ]]
+        echo "name=${IMAGE,,}" >> "$GITHUB_OUTPUT"
+        echo "candidate=${IMAGE,,}:sha-$REVISION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+    - uses: actions/download-artifact@v4
+      if: inputs.artifact-name != ''
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.artifact-path }}
+    - name: Prepare dependency context
+      if: inputs.normalized-dependencies == 'true'
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/../javascript-dependencies/normalize.cjs" .ci-dependencies
+    - uses: docker/login-action@v3
+      if: inputs.docker-push == 'true'
       with:
         registry: ${{ inputs.docker-registry }}
         username: ${{ inputs.docker-username }}
         password: ${{ inputs.docker-password }}
-
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Extract image name
-      id: imagename
-      shell: bash
-      run: |
-        IMAGE_NAME="${{ inputs.docker-image }}"
-        # Keep the full path for ghcr.io (owner/repo format required)
-        echo "image=$IMAGE_NAME" >> "$GITHUB_OUTPUT"
-
-    - name: Docker meta
-      id: meta
-      uses: docker/metadata-action@v5
-      with:
-        images: ${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}
-        tags: |
-          type=raw,value=sha-${{ inputs.ref }}
-          type=ref,event=branch
-          type=ref,event=tag
-          type=ref,event=pr
-          type=raw,value=latest
-          type=semver,pattern={{version}},value=${{ inputs.version }},enable={{is_default_branch}}
-          type=raw,value=${{ inputs.version }}
-
-    - name: Show generated Docker tags
-      run: | 
-        echo "Tags: ${{ steps.meta.outputs.tags }}"
-      shell: bash
-
-    - name: Build and push
+    - uses: docker/setup-qemu-action@v3
+      if: inputs.qemu == 'true'
+    - uses: docker/setup-buildx-action@v3
+    - id: build
       uses: docker/build-push-action@v6
       with:
         context: .
-        platforms: linux/amd64
+        file: ${{ inputs.dockerfile }}
+        platforms: ${{ inputs.platforms }}
         push: ${{ inputs.docker-push }}
-        tags: ${{ steps.meta.outputs.tags }}
-        cache-from: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:buildcache
-        cache-to: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:buildcache,mode=max
+        tags: ${{ steps.image.outputs.candidate }}
+        build-contexts: ${{ inputs.normalized-dependencies == 'true' && 'dependencies=.ci-dependencies' || '' }}
+        cache-from: type=registry,ref=${{ steps.image.outputs.name }}:buildcache
+        cache-to: ${{ inputs.docker-push == 'true' && format('type=registry,ref={0}:buildcache,mode=max', steps.image.outputs.name) || '' }}
+    # Existing injected workflows call this action only after checks. Keep that contract
+    # during migration; new candidate workflows never pass version here.
+    - uses: pablomarelli/homelab-workflows/.github/actions/docker-promote@main
+      if: inputs.version != '' && inputs.docker-push == 'true'
+      with:
+        image: ${{ steps.image.outputs.name }}
+        digest: ${{ steps.build.outputs.digest }}
+        version: ${{ inputs.version }}
+        ref: ${{ inputs.ref }}
+        docker-password: ${{ inputs.docker-password }}
+        docker-registry: ${{ inputs.docker-registry }}
+        docker-username: ${{ inputs.docker-username }}

@@ -1,5 +1,5 @@
 name: JavaScript tests
-description: Run unit tests, build, and declared Playwright suites
+description: Run unit tests, build, and explicitly configured integration/browser scripts
 inputs:
   ref:
     description: Checked source revision
@@ -7,24 +7,41 @@ inputs:
   node-version:
     description: Supported Node version
     default: '24'
+  e2e-scripts:
+    description: Space-separated required npm browser scripts; auto runs test:e2e if present, none disables
+    default: ''
+  integration-scripts:
+    description: Space-separated required npm integration scripts (application provisions services)
+    default: ''
+  playwright-workers:
+    description: Optional Playwright worker count passed to each browser script
+    default: ''
+  artifact-path:
+    description: Optional build output directory to upload for a compatible runtime Dockerfile
+    default: ''
+  artifact-name:
+    description: Artifact name scoped to this workflow run and exact revision
+    default: app-build-${{ github.run_id }}-${{ github.run_attempt }}
 runs:
   using: composite
   steps:
     - uses: actions/checkout@v4
       with:
         ref: ${{ inputs.ref }}
-    - uses: actions/setup-node@v4
+    - uses: pablomarelli/homelab-workflows/.github/actions/javascript-dependencies@main
       with:
         node-version: ${{ inputs.node-version }}
-        cache: npm
     - shell: bash
       env:
         CI: 'true'
-      run: |
-        npm ci
-        npm test
-        npm run build
-        if node -e 'process.exit(require("./package.json").scripts?.["test:e2e"] ? 0 : 1)'; then
-          npx --no-install playwright install --with-deps chromium
-          npm run test:e2e
-        fi
+        E2E_SCRIPTS: ${{ inputs.e2e-scripts || env.CI_E2E_SCRIPTS || 'auto' }}
+        INTEGRATION_SCRIPTS: ${{ inputs.integration-scripts || env.CI_INTEGRATION_SCRIPTS }}
+        PLAYWRIGHT_WORKERS: ${{ inputs.playwright-workers || env.CI_PLAYWRIGHT_WORKERS }}
+      run: bash "$GITHUB_ACTION_PATH/test.sh"
+    - uses: actions/upload-artifact@v4
+      if: inputs.artifact-path != '' || env.CI_BUILD_ARTIFACT_PATH != ''
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ inputs.artifact-path || env.CI_BUILD_ARTIFACT_PATH }}
+        if-no-files-found: error
+        retention-days: 1

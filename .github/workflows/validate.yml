@@ -18,4 +18,4 @@ jobs:
           node-version: '24'
       - run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -shellcheck= .github/workflows/*.yml workflows/*.yml workflows/*/*.yml
       - run: bash tests/releases.sh
-      - run: node --test tests/injection.test.cjs
+      - run: node --test tests/*.test.cjs

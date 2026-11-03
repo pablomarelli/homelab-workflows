@@ -7,3 +7,5 @@ The Go/frontend template supports `backend/go.mod`, `frontend/package.json`, a r
 The injector needs `REPOS_TOKEN` with workflow-write access. The application needs `INFRA_REPO_TOKEN` and `APP_NAMESPACE` (`media-share` for Easy Media Share). GHCR publishing uses `GITHUB_TOKEN`; make the package public or configure cluster image pull credentials.
 
 Run `node --test tests/injection.test.cjs` to test injection and stale-revision checks without publishing images or changing application repositories.
+
+See [the candidate release pipeline and adoption guide](docs/pipeline.md) for parallel image builds, gated digest promotion, version-stable npm caching, opt-in integration/browser suites and build artifacts, and the distinction between infrastructure updates and deployment health. Template changes are distributed on merge to `main`; review the rollout notes before merging.
