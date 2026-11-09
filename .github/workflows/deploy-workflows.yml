@@ -22,6 +22,7 @@ jobs:
           - easy-media-share
           - family-manager-backend
           - family-manager-frontend
+          - workout-tracker
           # - finance
           # - home-assistant
 

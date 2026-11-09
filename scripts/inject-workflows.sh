@@ -5,6 +5,11 @@ cd "$2"
 if [[ -f backend/go.mod && -f frontend/package.json && -f VERSION ]]; then
   lang=go-frontend-calver
   templates="$templates/go-frontend-calver"
+elif [[ -f pyproject.toml && -f uv.lock && -f frontend/package.json && -f frontend/pnpm-lock.yaml ]]; then
+  lang=uv-pnpm
+  templates="$templates/uv-pnpm"
+  test -f Dockerfile
+  test -f .github/workflows/ci.yml || test -f .github/workflows/ci.yaml
 elif [[ -f go.mod ]]; then
   lang=go
   grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$' VERSION || { echo 'Go projects require a root semantic VERSION file' >&2; exit 1; }

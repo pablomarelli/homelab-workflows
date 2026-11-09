@@ -26,6 +26,7 @@ for (const [language, files, expected] of [
   ["Go", { "go.mod": "module app", VERSION: "0.1.0" }, "deploy-prod.yml"],
   ["JavaScript", { "package.json": JSON.stringify({ scripts: { lint: "lint", test: "test", build: "build" } }), "package-lock.json": "{}" }, "deploy-prod.yml"],
   ["Python", { "pyproject.toml": "" }, "deploy-prod.yml"],
+  ["uv-pnpm", { "pyproject.toml": "[project]\nversion = \"0.1.0\"", "uv.lock": "", "frontend/package.json": "{}", "frontend/pnpm-lock.yaml": "", Dockerfile: "FROM python:3.14" }, "uv-pnpm/deploy-prod.yml"],
 ]) {
   test(`injects only the ${language} template and preserves CI and VERSION`, (t) => {
     const dir = fixture(t, Object.fromEntries(Object.entries({ ...files, ".github/workflows/ci.yaml": "existing CI" })
@@ -46,8 +47,9 @@ test("unsupported layouts fail without overwriting an existing deployment workfl
   assert.equal(fs.readFileSync(path.join(dir, "project/.github/workflows/deploy-prod.yml"), "utf8"), "existing deployment");
 });
 
-test("both freshness checks fail closed for stale revisions or API failures", (t) => {
-  const workflow = fs.readFileSync(path.join(root, "workflows/go-frontend-calver/deploy-prod.yml"), "utf8");
+for (const layout of ["go-frontend-calver", "uv-pnpm"]) {
+test(`${layout} freshness checks fail closed for stale revisions or API failures`, (t) => {
+  const workflow = fs.readFileSync(path.join(root, `workflows/${layout}/deploy-prod.yml`), "utf8");
   const checks = [...workflow.matchAll(/run: (test .*SOURCE_SHA")/g)].map((match) => match[1]);
   assert.equal(checks.length, 2);
   const dir = fixture(t, { "bin/gh": '#!/bin/sh\nprintf "%s" "$API_SHA"\nexit "$API_STATUS"\n' });
@@ -62,8 +64,8 @@ test("both freshness checks fail closed for stale revisions or API failures", (t
   }
 });
 
-test("the release condition permits only successful same-repository push CI", () => {
-  const workflow = fs.readFileSync(path.join(root, "workflows/go-frontend-calver/deploy-prod.yml"), "utf8");
+test(`${layout} permits only successful same-repository push CI`, () => {
+  const workflow = fs.readFileSync(path.join(root, `workflows/${layout}/deploy-prod.yml`), "utf8");
   const condition = workflow.match(/    if: >-\n([\s\S]*?)    runs-on:/)[1].trim();
   for (const [conclusion, event, repository, allowed] of [
     ["success", "push", "owner/app", true],
@@ -77,4 +79,15 @@ test("the release condition permits only successful same-repository push CI", ()
     const github = { repository: "owner/app", event: { workflow_run: { conclusion, event, head_repository: { full_name: repository } } } };
     assert.equal(runInNewContext(condition, { github }), allowed);
   }
+});
+}
+
+test("uv-pnpm requires app CI before touching deployment files", (t) => {
+  const dir = fixture(t, {
+    "project/pyproject.toml": "", "project/uv.lock": "", "project/frontend/package.json": "{}",
+    "project/frontend/pnpm-lock.yaml": "", "project/Dockerfile": "FROM python:3.14",
+    "project/.github/workflows/deploy-prod.yml": "existing deployment",
+  });
+  assert.notEqual(spawnSync("bash", ["-e", "-c", injector], { cwd: dir }).status, 0);
+  assert.equal(fs.readFileSync(path.join(dir, "project/.github/workflows/deploy-prod.yml"), "utf8"), "existing deployment");
 });

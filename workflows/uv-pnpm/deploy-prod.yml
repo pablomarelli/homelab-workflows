@@ -1,0 +1,77 @@
+name: Prod Deploy (ArgoCD)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: production-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Require current main before publishing
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SOURCE_SHA"
+      - name: Read application version
+        id: version
+        run: |
+          python3 - <<'PY'
+          import os, re, tomllib
+          from pathlib import Path
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          if not re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version):
+              raise SystemExit('Expected a semantic project version')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'tag={version}-{os.environ["SOURCE_SHA"]}\n')
+          PY
+      - name: Publish checked image
+        id: build
+        uses: pablomarelli/homelab-workflows/.github/actions/docker-build@main
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          docker-image: ${{ github.repository }}
+          docker-password: ${{ secrets.GITHUB_TOKEN }}
+          docker-push: true
+          version: ${{ steps.version.outputs.tag }}
+          node-auth-token: ${{ secrets.NODE_AUTH_TOKEN }}
+      - name: Require current main before infrastructure update
+        if: vars.DEPLOY_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$SOURCE_SHA"
+      - name: Update infrastructure
+        id: deploy
+        if: vars.DEPLOY_ENABLED == 'true'
+        uses: pablomarelli/homelab-workflows/.github/actions/argo-deploy@main
+        with:
+          app-name: ${{ github.event.repository.name }}
+          app-namespace: ${{ vars.APP_NAMESPACE }}
+          version: ${{ steps.version.outputs.tag }}
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+      - name: Report outcome
+        if: always()
+        env:
+          BUILD: ${{ steps.build.outcome }}
+          DEPLOY: ${{ steps.deploy.outcome }}
+        run: |
+          echo "Image publication: $BUILD" >> "$GITHUB_STEP_SUMMARY"
+          echo "Infrastructure update: $DEPLOY" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Cluster health: unverified' >> "$GITHUB_STEP_SUMMARY"
