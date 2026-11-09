@@ -18,6 +18,7 @@ jobs:
       matrix:
         project:
           - dev-portfolio
+          - data-library
           - easy-media-share
           - family-manager-backend
           - family-manager-frontend
