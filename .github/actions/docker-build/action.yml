@@ -26,6 +26,9 @@ inputs:
   version:
     description: 'Version tag for the image'
     required: false
+  node-auth-token:
+    description: Optional GitHub Packages token passed only as a BuildKit secret
+    default: ''
 
 outputs:
   image:
@@ -89,6 +92,7 @@ runs:
         context: .
         platforms: linux/amd64
         push: ${{ inputs.docker-push }}
+        secrets: ${{ inputs.node-auth-token != '' && format('node_auth_token={0}', inputs.node-auth-token) || '' }}
         tags: ${{ steps.meta.outputs.tags }}
         cache-from: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:buildcache
         cache-to: type=registry,ref=${{ inputs.docker-registry }}/${{ steps.imagename.outputs.image }}:buildcache,mode=max
